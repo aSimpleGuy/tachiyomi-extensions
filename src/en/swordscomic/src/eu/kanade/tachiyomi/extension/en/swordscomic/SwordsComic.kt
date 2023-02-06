@@ -73,7 +73,7 @@ class SwordsComic : HttpSource() {
     // Chapters
 
     override fun chapterListParse(response: Response): List<SChapter> {
-        return response.asJsoup().select("a.archive-tile-short")
+        return response.asJsoup().select("a.archive-tile")
             .map { element ->
                 SChapter.create().apply {
                     name = element.select("strong").text()
@@ -102,7 +102,7 @@ class SwordsComic : HttpSource() {
                 charCount = 0
             }
             charCount += word.length + 1
-            builder.append(Uri.encode(word.toUpperCase()))
+            builder.append(Uri.encode(word.uppercase()))
             builder.append("+")
         }
 

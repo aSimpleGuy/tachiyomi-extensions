@@ -43,7 +43,7 @@ class Ikuhentai : ParsedHttpSource() {
 
     override fun searchMangaFromElement(element: Element): SManga {
         val manga = SManga.create()
-        manga.thumbnail_url = element.select("div.col-4.col-sm-2.col-md-2 > div > a > img").attr("data-src")
+        manga.thumbnail_url = element.select("img").attr("data-src")
         element.select("div.tab-thumb > a").first().let {
             manga.setUrlWithoutDomain(it.attr("href"))
             manga.title = it.attr("title")
@@ -130,8 +130,8 @@ class Ikuhentai : ParsedHttpSource() {
 
     private fun parseStatus(element: String): Int = when {
 
-        element.toLowerCase().contains("ongoing") -> SManga.ONGOING
-        element.toLowerCase().contains("completado") -> SManga.COMPLETED
+        element.lowercase().contains("ongoing") -> SManga.ONGOING
+        element.lowercase().contains("completado") -> SManga.COMPLETED
         else -> SManga.UNKNOWN
     }
 

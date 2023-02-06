@@ -1,7 +1,7 @@
 package eu.kanade.tachiyomi.extension.pt.opex
 
-import eu.kanade.tachiyomi.lib.ratelimit.RateLimitInterceptor
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
@@ -13,10 +13,13 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import rx.Observable
@@ -35,7 +38,8 @@ class OnePieceEx : ParsedHttpSource() {
     override val supportsLatest = false
 
     override val client: OkHttpClient = network.cloudflareClient.newBuilder()
-        .addInterceptor(RateLimitInterceptor(1, 2, TimeUnit.SECONDS))
+        .addInterceptor(::bypassHttp103Intercept)
+        .rateLimit(1, 2, TimeUnit.SECONDS)
         .build()
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
@@ -72,7 +76,7 @@ class OnePieceEx : ParsedHttpSource() {
     override fun popularMangaFromElement(element: Element): SManga = SManga.create().apply {
         title = element.select("div.volume-nome h2").text() + " - " +
             element.select("div.volume-nome h3").text()
-        thumbnail_url = THUMBNAIL_URL_MAP[title.toUpperCase(Locale.ROOT)] ?: DEFAULT_THUMBNAIL
+        thumbnail_url = THUMBNAIL_URL_MAP[title.uppercase(Locale.ROOT)] ?: DEFAULT_THUMBNAIL
 
         val customUrl = "$baseUrl/mangas/".toHttpUrlOrNull()!!.newBuilder()
             .addQueryParameter("type", "special")
@@ -142,7 +146,7 @@ class OnePieceEx : ParsedHttpSource() {
                 val volumeEl = document.select("#post > div.volume:contains(" + title.substringAfter(" - ") + ")").first()!!
                 author = if (title.contains("One Piece")) "Eiichiro Oda" else "OPEX"
                 description = volumeEl.select("li.resenha").text()
-                thumbnail_url = THUMBNAIL_URL_MAP[title.toUpperCase(Locale.ROOT)] ?: DEFAULT_THUMBNAIL
+                thumbnail_url = THUMBNAIL_URL_MAP[title.uppercase(Locale.ROOT)] ?: DEFAULT_THUMBNAIL
             }
         }
     }
@@ -175,15 +179,21 @@ class OnePieceEx : ParsedHttpSource() {
         when (mangaUrl.queryParameter("type")!!) {
             "main" -> {
                 name = element.select("span").first()!!.text()
-                setUrlWithoutDomain(element.select("a.online").first()!!.attr("abs:href"))
+                element.selectFirst("a.online")!!.attr("abs:href")
+                    .substringBefore("?")
+                    .let { setUrlWithoutDomain(it) }
             }
             "sbs" -> {
                 name = element.select("div.volume-nome h2").first()!!.text()
-                setUrlWithoutDomain(element.select("header p.extra a:contains(SBS)").first()!!.attr("abs:href"))
+                element.selectFirst("header p.extra a:contains(SBS)")!!.attr("abs:href")
+                    .substringBefore("?")
+                    .let { setUrlWithoutDomain(it) }
             }
             "special" -> {
                 name = element.ownText()
-                setUrlWithoutDomain(element.select("a.online").first()!!.attr("abs:href"))
+                element.select("a.online").first()!!.attr("abs:href")
+                    .substringBefore("?")
+                    .let { setUrlWithoutDomain(it) }
             }
         }
 
@@ -220,6 +230,33 @@ class OnePieceEx : ParsedHttpSource() {
     override fun latestUpdatesFromElement(element: Element): SManga = throw UnsupportedOperationException("Not used")
 
     override fun latestUpdatesNextPageSelector() = throw UnsupportedOperationException("Not used")
+
+    private fun bypassHttp103Intercept(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+
+        if (request.url.pathSegments[0] != "mangas") {
+            return chain.proceed(request)
+        }
+
+        val bypasserUrl = "https://translate.google.com/translate".toHttpUrl().newBuilder()
+            .addQueryParameter("pto", "op")
+            .addQueryParameter("u", request.url.toString())
+            .build()
+
+        val bypasserRequest = request.newBuilder()
+            .url(bypasserUrl)
+            .build()
+
+        val bypasserResponse = chain.proceed(bypasserRequest)
+        val fixedBody = bypasserResponse.body?.string().orEmpty()
+            .replace("onepieceex-net.translate.goog", baseUrl.removePrefix("https://"))
+            .toResponseBody(bypasserResponse.body!!.contentType())
+
+        return bypasserResponse.newBuilder()
+            .body(fixedBody)
+            .request(request)
+            .build()
+    }
 
     companion object {
         private const val ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9," +

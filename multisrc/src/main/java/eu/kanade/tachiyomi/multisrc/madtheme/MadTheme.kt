@@ -1,6 +1,8 @@
 package eu.kanade.tachiyomi.multisrc.madtheme
 
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.asObservable
+import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -11,12 +13,17 @@ import eu.kanade.tachiyomi.source.online.ParsedHttpSource
 import eu.kanade.tachiyomi.util.asJsoup
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import okhttp3.Headers
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import rx.Observable
 import uy.kohesive.injekt.injectLazy
 import java.text.ParseException
 import java.text.SimpleDateFormat
@@ -31,6 +38,16 @@ abstract class MadTheme(
 ) : ParsedHttpSource() {
 
     override val supportsLatest = true
+
+    override val client: OkHttpClient = network.cloudflareClient.newBuilder()
+        .rateLimit(1, 1)
+        .build()
+
+    // TODO: better cookie sharing
+    // TODO: don't count cached responses against rate limit
+    private val chapterClient: OkHttpClient = network.cloudflareClient.newBuilder()
+        .rateLimit(1, 12)
+        .build()
 
     override fun headersBuilder() = Headers.Builder().apply {
         add("Referer", "$baseUrl/")
@@ -110,7 +127,11 @@ abstract class MadTheme(
         thumbnail_url = element.select("img").first()!!.attr("abs:data-src")
     }
 
-    override fun searchMangaNextPageSelector(): String? = ".paginator [rel=next]"
+    /*
+     * Only some sites use the next/previous buttons, so instead we check for the next link
+     * after the active one. We use the :not() selector to exclude the optional next button
+     */
+    override fun searchMangaNextPageSelector(): String? = ".paginator > a.active + a:not([rel=next])"
 
     // Details
     override fun mangaDetailsParse(document: Document): SManga = SManga.create().apply {
@@ -128,7 +149,7 @@ abstract class MadTheme(
             (altNames.takeIf { it.isNotEmpty() }?.let { "\n\nAlt name(s): ${it.joinToString()}" } ?: "")
 
         val statusText = document.select(".detail .meta > p > strong:contains(Status) ~ a").first()!!.text()
-        status = when (statusText.toLowerCase(Locale.US)) {
+        status = when (statusText.lowercase(Locale.US)) {
             "ongoing" -> SManga.ONGOING
             "completed" -> SManga.COMPLETED
             else -> SManga.UNKNOWN
@@ -136,6 +157,35 @@ abstract class MadTheme(
     }
 
     // Chapters
+    override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
+        // API is heavily rate limited. Use custom client
+        return if (manga.status != SManga.LICENSED) {
+            chapterClient.newCall(chapterListRequest(manga))
+                .asObservable()
+                .map { response ->
+                    chapterListParse(response)
+                }
+        } else {
+            Observable.error(Exception("Licensed - No chapters to show"))
+        }
+    }
+
+    override fun chapterListParse(response: Response): List<SChapter> {
+        if (response.code in 200..299) {
+            return super.chapterListParse(response)
+        }
+
+        // Try to show message/error from site
+        response.body?.let { body ->
+            json.decodeFromString<JsonObject>(body.string())["message"]
+                ?.jsonPrimitive
+                ?.content
+                ?.let { throw Exception(it) }
+        }
+
+        throw Exception("HTTP error ${response.code}")
+    }
+
     override fun chapterListRequest(manga: SManga): Request =
         GET("$baseUrl/api/manga${manga.url}/chapters?source=detail", headers)
 
@@ -149,7 +199,11 @@ abstract class MadTheme(
     override fun chapterListSelector(): String = "#chapter-list > li"
 
     override fun chapterFromElement(element: Element): SChapter = SChapter.create().apply {
-        setUrlWithoutDomain(element.select("a").first()!!.attr("abs:href"))
+        // Not using setUrlWithoutDomain() to support external chapters
+        url = element.selectFirst("a")
+            .absUrl("href")
+            .removePrefix(baseUrl)
+
         name = element.select(".chapter-title").first()!!.text()
         date_upload = parseChapterDate(element.select(".chapter-update").first()?.text())
         chapter_number = name.substringAfterLast(' ').toFloatOrNull() ?: -1f
@@ -160,47 +214,38 @@ abstract class MadTheme(
         val html = document.html()!!
 
         if (!html.contains("var mainServer = \"")) {
-            // No fancy CDN
+            // No fancy CDN, all images are available directly in <img> tags
             return document.select("#chapter-images img").mapIndexed { index, element ->
-                Page(index, "", element.attr("abs:data-src"))
+                Page(index, imageUrl = element.attr("abs:data-src"))
             }
         }
 
-        val scheme = baseUrl.toHttpUrl().scheme + "://"
-
-        val mainCdn = html
+        // While the site may support multiple CDN hosts, we have opted to ignore those
+        val mainServer = html
             .substringAfter("var mainServer = \"")
             .substringBefore("\"")
+        val schemePrefix = if (mainServer.startsWith("//")) "https:" else ""
 
-        val mainCdnHttp = (scheme + mainCdn).toHttpUrl()
-        CDN_URL = scheme + mainCdnHttp.host
-        CDN_PATH = mainCdnHttp.encodedPath
-
-        val chImages = html
+        val chapImages = html
             .substringAfter("var chapImages = '")
             .substringBefore("'")
             .split(',')
 
-        if (html.contains("var multiServers = true")) {
-            val altCDNs = json.decodeFromString<List<String>>(
-                html
-                    .substringAfter("var imageServers = ")
-                    .substringBefore("\n")
-            )
-            CDN_URL_ALT = altCDNs.mapNotNull {
-                val url = scheme + it
-                if (!(CDN_URL!!).contains(url)) url else null
-            }
-        }
-
-        // Disabling alt CDNs until fallback can be implemented
-        val allCDN = listOf(CDN_URL) // + CDN_URL_ALT
-        return chImages.mapIndexed { index, img ->
-            Page(index, "", allCDN.random() + CDN_PATH + img)
+        return chapImages.mapIndexed { index, path ->
+            Page(index, imageUrl = "$schemePrefix$mainServer$path")
         }
     }
 
     // Image
+    override fun pageListRequest(chapter: SChapter): Request {
+        return if (chapter.url.toHttpUrlOrNull() != null) {
+            // External chapter
+            GET(chapter.url, headers)
+        } else {
+            super.pageListRequest(chapter)
+        }
+    }
+
     override fun imageUrlParse(document: Document): String =
         throw UnsupportedOperationException("Not used.")
 
@@ -289,11 +334,5 @@ abstract class MadTheme(
     ) :
         Filter.Select<String>(displayName, vals.map { it.first }.toTypedArray(), state) {
         fun toUriPart() = vals[state].second
-    }
-
-    companion object {
-        private var CDN_URL: String? = null
-        private var CDN_URL_ALT: List<String> = listOf()
-        private var CDN_PATH: String? = null
     }
 }

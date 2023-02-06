@@ -48,12 +48,14 @@ abstract class EHentai(
 
     override val supportsLatest = true
 
+    private var lastMangaId = ""
+
     // true if lang is a "natural human language"
     private fun isLangNatural(): Boolean = lang !in listOf("none", "other")
 
     private fun genericMangaParse(response: Response): MangasPage {
         val doc = response.asJsoup()
-        val parsedMangas = doc.select("table.itg td.glname")
+        val mangaElements = doc.select("table.itg td.glname")
             .let { elements ->
                 if (isLangNatural() && getEnforceLanguagePref()) {
                     elements.filter { element ->
@@ -65,12 +67,17 @@ abstract class EHentai(
                     elements
                 }
             }
-            .map {
+        val parsedMangas: MutableList<SManga> = mutableListOf()
+        for (i in mangaElements.indices) {
+            val manga = mangaElements[i].let {
                 SManga.create().apply {
                     // Get title
                     it.select("a")?.first()?.apply {
                         title = this.select(".glink").text()
                         url = ExGalleryMetadata.normalizeUrl(attr("href"))
+                        if (i == mangaElements.lastIndex) {
+                            lastMangaId = ExGalleryMetadata.galleryId(attr("href"))
+                        }
                     }
                     // Get image
                     it.parent().select(".glthumb img")?.first().apply {
@@ -79,9 +86,11 @@ abstract class EHentai(
                     }
                 }
             }
+            parsedMangas.add(manga)
+        }
 
         // Add to page if required
-        val hasNextPage = doc.select("a[onclick=return false]").last()?.text() == ">"
+        val hasNextPage = doc.select("a#unext[href]").hasText()
 
         return MangasPage(parsedMangas, hasNextPage)
     }
@@ -156,9 +165,26 @@ abstract class EHentai(
             .joinToString(",")
             .let { if (it.isNotEmpty()) ",$it" else it }
         uri.appendQueryParameter("f_search", modifiedQuery)
+        //when attempting to search with no genres selected, will auto select all genres
+        filters.filterIsInstance<GenreGroup>().firstOrNull()?.state?.let {
+            //variable to to check is any genres are selected
+            val check = it.any { option -> option.state }  // or it.any(GenreOption::state)
+            //if no genres are selected by the user set all genres to on
+            if (!check) {
+                for (i in it) {
+                    (i as GenreOption).state = true
+                }
+            }
+        }
+
         filters.forEach {
             if (it is UriFilter) it.addToUri(uri)
         }
+
+        if (uri.toString().contains("f_spf") || uri.toString().contains("f_spt")) {
+            if (page > 1) uri.appendQueryParameter("from", lastMangaId)
+        }
+
         return exGet(uri.toString(), page)
     }
 
@@ -169,9 +195,11 @@ abstract class EHentai(
     override fun latestUpdatesParse(response: Response) = genericMangaParse(response)
 
     private fun exGet(url: String, page: Int? = null, additionalHeaders: Headers? = null, cache: Boolean = true): Request {
+        // pages no longer exist, if app attempts to go to the first page after a request, do not include the page append
+        val pageIndex = if (page == 1) null else page
         return GET(
-            page?.let {
-                addParam(url, "page", (page - 1).toString())
+            pageIndex?.let {
+                addParam(url, "next", lastMangaId)
             } ?: url,
             additionalHeaders?.let { header ->
                 val headers = headers.newBuilder()
@@ -182,6 +210,7 @@ abstract class EHentai(
                 }
                 headers.build()
             } ?: headers
+
         ).let {
             if (!cache) {
                 it.newBuilder().cacheControl(CacheControl.FORCE_NETWORK).build()
@@ -206,7 +235,7 @@ abstract class EHentai(
             thumbnailUrl = select("#gd1 div").attr("style").nullIfBlank()?.let {
                 it.substring(it.indexOf('(') + 1 until it.lastIndexOf(')'))
             }
-            genre = select("#gdc div").text().nullIfBlank()?.trim()?.toLowerCase()
+            genre = select("#gdc div").text().nullIfBlank()?.trim()?.lowercase()
 
             uploader = select("#gdn").text().nullIfBlank()?.trim()
 
@@ -225,7 +254,7 @@ abstract class EHentai(
                                 ignore {
                                     when (
                                         left.removeSuffix(":")
-                                            .toLowerCase()
+                                            .lowercase()
                                     ) {
                                         "posted" -> datePosted = EX_DATE_FORMAT.parse(right)?.time ?: 0
                                         "visible" -> visible = right.nullIfBlank()
@@ -357,7 +386,7 @@ abstract class EHentai(
         EnforceLanguageFilter(getEnforceLanguagePref()),
         Watched(),
         GenreGroup(),
-        TagFilter("Misc Tags", triStateBoxesFrom(miscTags), ""),
+        TagFilter("Misc Tags", triStateBoxesFrom(miscTags), "other"),
         TagFilter("Female Tags", triStateBoxesFrom(femaleTags), "female"),
         TagFilter("Male Tags", triStateBoxesFrom(maleTags), "male"),
         AdvancedGroup()

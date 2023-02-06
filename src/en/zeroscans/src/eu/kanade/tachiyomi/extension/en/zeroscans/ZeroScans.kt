@@ -2,6 +2,7 @@ package eu.kanade.tachiyomi.extension.en.zeroscans
 
 import android.util.Log
 import eu.kanade.tachiyomi.network.GET
+import eu.kanade.tachiyomi.network.interceptor.rateLimit
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -25,13 +26,13 @@ class ZeroScans : HttpSource() {
 
     override val lang: String = "en"
 
-    override val baseUrl: String = "https://beta.zeroscans.com"
+    override val baseUrl: String = "https://zeroscans.com"
 
     override val supportsLatest: Boolean = true
 
     private val json: Json by injectLazy()
 
-    private lateinit var comicList: List<ZeroScansComicDto>
+    private var comicList: List<ZeroScansComicDto> = emptyList()
 
     private lateinit var rankings: ZeroScansRankingsDto
 
@@ -152,20 +153,15 @@ class ZeroScans : HttpSource() {
     }
 
     override fun fetchChapterList(manga: SManga): Observable<List<SChapter>> {
+        // Paginated fragile endpoint so explicit rateLimit
+        val chapterListClient = client.newBuilder().rateLimit(1, 2).build()
+        val zsChapters = mutableListOf<ZeroScansChapterDto>()
+        var page = 0
+        var hasMoreResult = true
         try {
-            var page = 1
-
-            val response = client.newCall(zsChapterListRequest(page, manga)).execute()
-
-            val zsChapterPage = zsChapterListParse(response)
-
-            val zsChapters = zsChapterPage.chapters.toMutableList()
-
-            var hasMoreResult = zsChapterPage.hasNextPage
-
             while (hasMoreResult) {
                 page++
-                val newResponse = client.newCall(zsChapterListRequest(page, manga)).execute()
+                val newResponse = chapterListClient.newCall(zsChapterListRequest(page, manga)).execute()
                 val newZSChapterPage = zsChapterListParse(newResponse)
                 zsChapters.addAll(newZSChapterPage.chapters)
                 hasMoreResult = newZSChapterPage.hasNextPage

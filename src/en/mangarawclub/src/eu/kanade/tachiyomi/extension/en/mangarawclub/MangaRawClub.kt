@@ -1,30 +1,27 @@
 package eu.kanade.tachiyomi.extension.en.mangarawclub
 
 import eu.kanade.tachiyomi.network.GET
-import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
-import eu.kanade.tachiyomi.source.model.MangasPage
 import eu.kanade.tachiyomi.source.model.Page
 import eu.kanade.tachiyomi.source.model.SChapter
 import eu.kanade.tachiyomi.source.model.SManga
 import eu.kanade.tachiyomi.source.online.ParsedHttpSource
-import eu.kanade.tachiyomi.util.asJsoup
 import okhttp3.FormBody
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
-import rx.Observable
 import java.text.SimpleDateFormat
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
 class MangaRawClub : ParsedHttpSource() {
 
-    override val name = "manga-raw.club"
-    override val baseUrl = "https://www.manga-raw.club"
+    override val id = 734865402529567092
+    override val name = "MReader"
+    override val baseUrl = "https://www.mreader.co"
     override val lang = "en"
     override val supportsLatest = true
     override val client: OkHttpClient = network.cloudflareClient.newBuilder()
@@ -44,7 +41,7 @@ class MangaRawClub : ParsedHttpSource() {
     }
 
     override fun latestUpdatesRequest(page: Int): Request {
-        return GET("$baseUrl/listt/manga/?results=$page", headers)
+        return GET("$baseUrl/jumbo/manga/?results=$page", headers)
     }
 
     override fun searchMangaSelector() = "ul.novel-list > li.novel-item"
@@ -66,24 +63,28 @@ class MangaRawClub : ParsedHttpSource() {
     override fun latestUpdatesNextPageSelector() = searchMangaNextPageSelector()
 
     override fun mangaDetailsParse(document: Document): SManga {
+        if (document.select(".novel-header").first() == null)
+            throw Exception("Page not found")
+
         val manga = SManga.create()
-        val author = document.select(".author a").first()?.attr("title") ?: ""
-        manga.author = if (author != "Updating") author else null
+        val author = document.select(".author a").first()?.attr("title")?.trim() ?: ""
+        if (author.lowercase(Locale.ROOT) != "updating")
+            manga.author = author
 
         var description = document.select(".description").first()?.text() ?: ""
-        description = description.substringAfter("The Summary is").trim()
+        description = description.substringAfter("Summary is").trim()
 
-        val otherTitle = document.select(".alternative-title").first()?.text() ?: ""
-        if (otherTitle != "Updating")
+        val otherTitle = document.select(".alternative-title").first()?.text()?.trim() ?: ""
+        if (otherTitle.isNotEmpty() && otherTitle.lowercase(Locale.ROOT) != "updating")
             description += "\n\n$altName $otherTitle"
         manga.description = description.trim()
 
-        val genres = mutableListOf<String>()
-        document.select(".categories a[href*=genre]").forEach { element ->
-            val genre = element.attr("title").removeSuffix("Genre").trim()
-            genres.add(genre)
+        manga.genre = document.select(".categories a[href*=genre]").joinToString(", ") {
+            it.attr("title").removeSuffix("Genre").trim()
+                .split(" ").joinToString(" ") { char ->
+                    char.lowercase().replaceFirstChar { c -> c.uppercase() }
+                }
         }
-        manga.genre = genres.joinToString(", ")
 
         val statusElement = document.select("div.header-stats")
         manga.status = when {
@@ -103,7 +104,7 @@ class MangaRawClub : ParsedHttpSource() {
     override fun chapterListSelector() = "ul.chapter-list > li"
 
     override fun chapterListRequest(manga: SManga): Request {
-        val url = baseUrl + manga.url + "all-chapters"
+        val url = baseUrl + manga.url + "all-chapters/"
         return GET(url, headers)
     }
 
@@ -144,19 +145,6 @@ class MangaRawClub : ParsedHttpSource() {
     }
 
     override fun imageUrlParse(document: Document) = throw UnsupportedOperationException("Not used.")
-
-    override fun fetchSearchManga(page: Int, query: String, filters: FilterList): Observable<MangasPage> {
-        val request = searchMangaRequest(page, query, filters)
-        return client.newCall(request).asObservableSuccess().map { response ->
-            val mangas = mutableListOf<SManga>()
-            val document = response.asJsoup()
-            document.select(searchMangaSelector()).forEach { element ->
-                mangas.add(searchMangaFromElement(element))
-            }
-            val nextPage = document.select(searchMangaNextPageSelector()).isNotEmpty()
-            MangasPage(mangas, nextPage)
-        }
-    }
 
     override fun searchMangaRequest(page: Int, query: String, filters: FilterList): Request {
         if (query.isNotEmpty()) // Query search

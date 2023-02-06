@@ -2,11 +2,11 @@ package eu.kanade.tachiyomi.extension.zh.manhuagui
 
 import android.app.Application
 import android.content.SharedPreferences
-import com.squareup.duktape.Duktape
-import eu.kanade.tachiyomi.lib.ratelimit.SpecificHostRateLimitInterceptor
+import app.cash.quickjs.QuickJs
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.POST
 import eu.kanade.tachiyomi.network.asObservableSuccess
+import eu.kanade.tachiyomi.network.interceptor.rateLimitHost
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
@@ -71,23 +71,19 @@ class Manhuagui : ConfigurableSource, ParsedHttpSource() {
     private val baseHttpUrl: HttpUrl = baseUrl.toHttpUrlOrNull()!!
 
     // Add rate limit to fix manga thumbnail load failure
-    private val mainSiteRateLimitInterceptor = SpecificHostRateLimitInterceptor(baseHttpUrl, preferences.getString(MAINSITE_RATELIMIT_PREF, MAINSITE_RATELIMIT_DEFAULT_VALUE)!!.toInt(), 10)
-    private val imageCDNRateLimitInterceptor1 = SpecificHostRateLimitInterceptor(imageServer[0].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
-    private val imageCDNRateLimitInterceptor2 = SpecificHostRateLimitInterceptor(imageServer[1].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
-
     override val client: OkHttpClient =
         if (getShowR18())
             network.client.newBuilder()
-                .addNetworkInterceptor(mainSiteRateLimitInterceptor)
-                .addNetworkInterceptor(imageCDNRateLimitInterceptor1)
-                .addNetworkInterceptor(imageCDNRateLimitInterceptor2)
+                .rateLimitHost(baseHttpUrl, preferences.getString(MAINSITE_RATELIMIT_PREF, MAINSITE_RATELIMIT_DEFAULT_VALUE)!!.toInt(), 10)
+                .rateLimitHost(imageServer[0].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
+                .rateLimitHost(imageServer[1].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
                 .addNetworkInterceptor(AddCookieHeaderInterceptor(baseHttpUrl.host))
                 .build()
         else
             network.client.newBuilder()
-                .addNetworkInterceptor(mainSiteRateLimitInterceptor)
-                .addNetworkInterceptor(imageCDNRateLimitInterceptor1)
-                .addNetworkInterceptor(imageCDNRateLimitInterceptor2)
+                .rateLimitHost(baseHttpUrl, preferences.getString(MAINSITE_RATELIMIT_PREF, MAINSITE_RATELIMIT_DEFAULT_VALUE)!!.toInt(), 10)
+                .rateLimitHost(imageServer[0].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
+                .rateLimitHost(imageServer[1].toHttpUrlOrNull()!!, preferences.getString(IMAGE_CDN_RATELIMIT_PREF, IMAGE_CDN_RATELIMIT_DEFAULT_VALUE)!!.toInt())
                 .build()
 
     // Add R18 verification cookie
@@ -293,7 +289,7 @@ class Manhuagui : ConfigurableSource, ParsedHttpSource() {
         if (hiddenEncryptedChapterList != null) {
             if (getShowR18()) {
                 // Hidden chapter list is LZString encoded
-                val decodedHiddenChapterList = Duktape.create().use {
+                val decodedHiddenChapterList = QuickJs.create().use {
                     it.evaluate(
                         jsDecodeFunc +
                             """LZString.decompressFromBase64('${hiddenEncryptedChapterList.`val`()}');"""
@@ -385,7 +381,7 @@ class Manhuagui : ConfigurableSource, ParsedHttpSource() {
 
         val html = document.html()
         val imgCode = re.find(html)?.groups?.get(1)?.value
-        val imgDecode = Duktape.create().use {
+        val imgDecode = QuickJs.create().use {
             it.evaluate(jsDecodeFunc + imgCode) as String
         }
 

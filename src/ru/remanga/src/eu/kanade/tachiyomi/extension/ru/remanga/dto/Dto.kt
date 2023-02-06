@@ -1,3 +1,5 @@
+package eu.kanade.tachiyomi.extension.ru.remanga.dto
+
 import kotlinx.serialization.Serializable
 
 @Serializable
@@ -14,9 +16,9 @@ data class BranchesDto(
 
 @Serializable
 data class ImgDto(
-    val high: String,
-    val mid: String,
-    val low: String
+    val high: String? = null,
+    val mid: String? = null,
+    val low: String? = null
 )
 
 @Serializable
@@ -61,7 +63,6 @@ data class MangaDetDto(
 
 @Serializable
 data class PropsDto(
-    val total_items: Int,
     val total_pages: Int,
     val page: Int
 )
@@ -115,5 +116,5 @@ data class ChunksPageDto(
 @Serializable
 data class UserDto(
     val id: Long,
-    val access_token: String
+    val access_token: String? = null
 )

@@ -6,6 +6,8 @@ import android.net.Uri
 import android.webkit.CookieManager
 import androidx.preference.PreferenceScreen
 import androidx.preference.SwitchPreferenceCompat
+import eu.kanade.tachiyomi.lib.textinterceptor.TextInterceptor
+import eu.kanade.tachiyomi.lib.textinterceptor.TextInterceptorHelper
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.source.ConfigurableSource
 import eu.kanade.tachiyomi.source.model.Filter
@@ -36,7 +38,6 @@ import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 import java.text.SimpleDateFormat
 import java.util.Locale
-import kotlin.math.ceil
 
 class Tapastic : ConfigurableSource, ParsedHttpSource() {
 
@@ -96,6 +97,7 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
                 }
             }
         )
+        .addInterceptor(TextInterceptor())
         .build()
 
     private val preferences: SharedPreferences by lazy {
@@ -104,6 +106,7 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder()
         .add("Referer", "https://m.tapas.io")
+        .set("User-Agent", USER_AGENT)
 
     override fun setupPreferenceScreen(screen: PreferenceScreen) {
         val chapterVisibilityPref = SwitchPreferenceCompat(screen.context).apply {
@@ -159,8 +162,39 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
     override fun popularMangaSelector() = "li.js-list-item"
     override fun popularMangaFromElement(element: Element) = SManga.create().apply {
         url = element.select(".item__thumb a").attr("href")
-        title = element.select(".item__thumb img").attr("alt")
+        title = toTitle(element.select(".item__thumb img").attr("alt"))
         thumbnail_url = element.select(".item__thumb img").attr("src")
+    }
+
+    private class Genre {
+        companion object {
+            val genreArray = arrayOf(
+                "Any",
+                "Action",
+                "BL",
+                "Comedy",
+                "Drama",
+                "Fantasy",
+                "GL",
+                "Gaming",
+                "Horror",
+                "LGBTQ+",
+                "Mystery",
+                "Romance",
+                "Science fiction",
+                "Slice of life"
+            )
+        }
+    }
+
+    private fun toTitle(str: String): String {
+        for (genre in Genre.genreArray) {
+            val extraTitle = ("Tapas " + genre.plus(" "))
+            if (str.contains(extraTitle, ignoreCase = true)) {
+                return str.replace(extraTitle, "")
+            }
+        }
+        return str
     }
 
     // Latest
@@ -218,7 +252,7 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
     override fun searchMangaSelector() = "${popularMangaSelector()}, .search-item-wrap"
     override fun searchMangaFromElement(element: Element): SManga = SManga.create().apply {
         url = element.select(".item__thumb a, .title-section .title a").attr("href")
-        title = element.select(".item__thumb img").firstOrNull()?.attr("alt") ?: element.select(".title-section .title a").text()
+        title = toTitle(element.select(".item__thumb img").firstOrNull()?.attr("alt") ?: element.select(".title-section .title a").text())
         thumbnail_url = element.select(".item__thumb img, .thumb-wrap img").attr("src")
     }
 
@@ -234,7 +268,26 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
         thumbnail_url = document.select("div.thumb-wrapper img").attr("abs:src")
         author = document.select("ul.creator-section a.name").joinToString { it.text() }
         artist = author
-        description = document.select("div.row-body span.description__body").text()
+        status = document.select("div.schedule span.schedule-label").text().toStatus()
+        val announcementName: String? = document.select("div.series-announcement div.announcement__text p").text()
+
+        if (announcementName!!.contains("Hiatus")) {
+            status = SManga.ON_HIATUS
+            description = document.select("div.row-body span.description__body").text()
+        } else {
+            val announcementText: String? = document.select("div.announcement__body p.js-announcement-text").text()
+            description = if (announcementName.isNullOrEmpty() || announcementText.isNullOrEmpty()) {
+                document.select("div.row-body span.description__body").text()
+            } else {
+                announcementName.plus("\n") + announcementText.plus("\n\n") + document.select("div.row-body span.description__body").text()
+            }
+        }
+    }
+
+    private fun String.toStatus() = when {
+        this.contains("Updates", ignoreCase = true) -> SManga.ONGOING
+        this.contains("Completed", ignoreCase = true) -> SManga.COMPLETED
+        else -> SManga.UNKNOWN
     }
 
     // Chapters
@@ -295,32 +348,6 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
 
     // Pages
 
-    // TODO: Split off into library file or something, because Webtoons is using the exact same wordwrap and toImage functions
-    //  multisrc/src/main/java/eu/kanade/tachiyomi/multisrc/webtoons/Webtoons.kt
-    private fun wordwrap(t: String, lineWidth: Int) = buildString {
-        val text = t.replace("\n", "\n ")
-        var charCount = 0
-        text.split(" ").forEach { w ->
-            if (w.contains("\n")) {
-                charCount = 0
-            }
-            if (charCount > lineWidth) {
-                append("\n")
-                charCount = 0
-            }
-            append("$w ")
-            charCount += w.length + 1
-        }
-    }
-
-    private fun toImage(t: String, fontSize: Int, bold: Boolean = false): String {
-        val text = wordwrap(t.replace("&amp;", "&").replace("\\s*<br>\\s*".toRegex(), "\n"), 65)
-        val imgHeight = (text.lines().size + 2) * fontSize * 1.3
-        return "https://placehold.jp/" + fontSize + "/ffffff/000000/1500x" + ceil(imgHeight).toInt() + ".png?" +
-            "css=%7B%22text-align%22%3A%22%20left%22%2C%22padding-left%22%3A%22%203%25%22" + (if (bold) "%2C%22font-weight%22%3A%22%20600%22" else "") + "%7D&" +
-            "text=" + Uri.encode(text)
-    }
-
     override fun pageListParse(document: Document): List<Page> {
         var pages = document.select("img.content__img").mapIndexed { i, img ->
             Page(i, "", img.let { if (it.hasAttr("data-src")) it.attr("abs:data-src") else it.attr("abs:src") })
@@ -330,13 +357,12 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
             val episodeStory = document.select("p.js-episode-story").html()
 
             if (episodeStory.isNotEmpty()) {
-                val storyImage = toImage(episodeStory, 42)
-
                 val creator = document.select("a.name.js-fb-tracking")[0].text()
-                val creatorImage = toImage("Author's Notes from $creator", 43, true)
 
-                pages = pages + Page(pages.size, "", creatorImage)
-                pages = pages + Page(pages.size, "", storyImage)
+                pages = pages + Page(
+                    pages.size, "",
+                    TextInterceptorHelper.createUrl(creator, episodeStory)
+                )
             }
         }
         return pages
@@ -489,5 +515,6 @@ class Tapastic : ConfigurableSource, ParsedHttpSource() {
         private const val CHAPTER_VIS_PREF_KEY = "lockedChapterVisibility"
         private const val SHOW_LOCK_PREF_KEY = "showChapterLock"
         private const val SHOW_AUTHORS_NOTES_KEY = "showAuthorsNotes"
+        private const val USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:105.0) Gecko/20100101 Firefox/105.0"
     }
 }

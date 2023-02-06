@@ -20,6 +20,19 @@ JSON backups are now unusable due to the ID change. You will have to manually re
 
 ## Guides
 
+### What does the Status of a Manga in Tachiyomi mean?
+
+Please refer to the following table
+
+| Status in Tachiyomi | in MangaDex            | Remarks |
+|---------------------|------------------------|---------|
+| Ongoing             | Publication: Ongoing   |         |
+| Cancelled           | Publication: Cancelled | This title was abruptly stopped and will not resume |
+| Publishing Finished | Publication: Completed | The title is finished in its original language. However, Translations remain |
+| On_Hiatus           | Publication: Hiatus    | The title is not currently receiving any new chapters |
+| Completed           | Completed/Cancelled    | All chapters are translated and available |
+| Unknown             | Unknown                | There is no info about the Status of this Entry |
+
 ### How can I block particular Scanlator Groups?
 
 The **MangaDex** extension allows blocking **Scanlator Groups**. Chapters uploaded by a **Blocked Scanlator Group** will not show up in **Latest** or in **Manga feed** (chapters list). For now, you can only block Groups by entering their UUIDs manually.
@@ -37,6 +50,8 @@ A. Finding the **UUIDs**:
         + Azuki Manga     | `5fed0576-8b94-4f9a-b6a7-08eecd69800d`
         + Bilibili Comics | `06a9fecb-b608-4f19-b93c-7caab06b7f44`
         + Comikey         | `8d8ecf83-8d42-4f8c-add8-60963f9f28d9`
+        + INKR            | `caa63201-4a17-4b7f-95ff-ed884a2b7e60`
+        + MangaHot        | `319c1b10-cbd0-4f55-a46e-c4ee17e65139`
         + MangaPlus       | `4f1de6a2-f0c5-4ac5-bce5-02c7dbb67deb`
 
 B. Blocking a group using their UUID in Tachiyomi MangaDex extension `v1.2.150+`:
@@ -45,10 +60,11 @@ B. Blocking a group using their UUID in Tachiyomi MangaDex extension `v1.2.150+`
 1. Tap on the option **Block Groups by UUID** and enter the UUIDs.
     - By Default, the following groups are blocked:
      ```
-     Azuki Manga, Bilibili Comics, Comikey & MangaPlus
+     Azuki Manga, Bilibili Comics, Comikey, INKR, MangaHot & MangaPlus
      ```
     - Which are entered as:
      ```
      5fed0576-8b94-4f9a-b6a7-08eecd69800d, 06a9fecb-b608-4f19-b93c-7caab06b7f44,
-     8d8ecf83-8d42-4f8c-add8-60963f9f28d9, 4f1de6a2-f0c5-4ac5-bce5-02c7dbb67deb
+     8d8ecf83-8d42-4f8c-add8-60963f9f28d9, caa63201-4a17-4b7f-95ff-ed884a2b7e60,
+     319c1b10-cbd0-4f55-a46e-c4ee17e65139, 4f1de6a2-f0c5-4ac5-bce5-02c7dbb67deb
      ```

@@ -10,6 +10,7 @@ class MMRCMSSources {
             abstract val isNsfw: Boolean
             abstract val className: String
             abstract val pkgName: String
+            abstract val sourceName: String
             abstract val overrideVersionCode: Int
 
             data class Single(
@@ -18,7 +19,8 @@ class MMRCMSSources {
                 val lang: String,
                 override val isNsfw: Boolean = false,
                 override val className: String = name.replace(" ", ""),
-                override val pkgName: String = className.toLowerCase(Locale.ENGLISH),
+                override val pkgName: String = className.lowercase(Locale.ENGLISH),
+                override val sourceName: String = name,
                 override val overrideVersionCode: Int = 0,
             ) : SourceData()
 
@@ -28,7 +30,8 @@ class MMRCMSSources {
                 val langs: List<String>,
                 override val isNsfw: Boolean = false,
                 override val className: String = name.replace(" ", "") + "Factory",
-                override val pkgName: String = className.substringBefore("Factory").toLowerCase(Locale.ENGLISH),
+                override val pkgName: String = className.substringBefore("Factory").lowercase(Locale.ENGLISH),
+                override val sourceName: String = name,
                 override val overrideVersionCode: Int = 0,
             ) : SourceData()
         }
@@ -39,7 +42,7 @@ class MMRCMSSources {
             SourceData.Single("Fallen Angels", "https://manga.fascans.com", "en", overrideVersionCode = 2),
             SourceData.Single("Zahard", "https://zahard.xyz", "en", overrideVersionCode = 2),
             SourceData.Single("Manhwas Men", "https://manhwas.men", "en", isNsfw = true, overrideVersionCode = 1),
-            SourceData.Single("Scan FR", "https://www.scan-fr.cc", "fr", overrideVersionCode = 1),
+            SourceData.Single("Scan FR", "https://www.scan-fr.org", "fr", overrideVersionCode = 2),
             SourceData.Single("Scan VF", "https://www.scan-vf.net", "fr", overrideVersionCode = 1),
             SourceData.Single("Scan OP", "https://scan-op.cc", "fr"),
             SourceData.Single("Komikid", "https://www.komikid.com", "id"),
@@ -50,21 +53,17 @@ class MMRCMSSources {
             SourceData.Single("Mangadoor", "https://mangadoor.com", "es", overrideVersionCode = 1),
             SourceData.Single("Utsukushii", "https://manga.utsukushii-bg.com", "bg", overrideVersionCode = 1),
             SourceData.Single("Phoenix-Scans", "https://phoenix-scans.pl", "pl", className = "PhoenixScans", overrideVersionCode = 1),
-            SourceData.Single("Puzzmos", "https://puzzmos.com", "tr", overrideVersionCode = 1),
             SourceData.Single("Scan-1", "https://wwv.scan-1.com", "fr", className = "ScanOne", overrideVersionCode = 1),
-            SourceData.Single("Lelscan-VF", "https://lelscan-vf.co", "fr", className = "LelscanVF"),
-            SourceData.Single("Komik Manga", "https://adm.komikmanga.com", "id"),
-            SourceData.Single("Mangazuki Raws", "https://raws.mangazuki.co", "ko", overrideVersionCode = 1),
-            SourceData.Single("Mangazuki", "https://mangazuki.co", "en", overrideVersionCode = 1),
+            SourceData.Single("Lelscan-VF", "https://lelscanvf.com", "fr", className = "LelscanVF", overrideVersionCode = 1),
             SourceData.Single("AnimaRegia", "https://animaregia.net", "pt-BR", overrideVersionCode = 4),
             SourceData.Single("MangaVadisi", "http://manga-v2.mangavadisi.org", "tr", overrideVersionCode = 1),
             SourceData.Single("MangaID", "https://mangaid.click", "id", overrideVersionCode = 1),
-            SourceData.Single("Jpmangas", "https://jpmangas.co", "fr"),
+            SourceData.Single("Jpmangas", "https://jpmangas.cc", "fr", overrideVersionCode = 1),
             SourceData.Single("Op-VF", "https://www.op-vf.com", "fr", className = "OpVF"),
-            SourceData.Single("FR Scan", "https://frscan.cc", "fr", overrideVersionCode = 1),
+            SourceData.Single("FR Scan", "https://frscan.ws", "fr", overrideVersionCode = 2),
             SourceData.Single("Ama Scans", "https://amascan.com", "pt-BR", isNsfw = true, overrideVersionCode = 2),
-            SourceData.Single("Gekkou Scans", "https://gekkou.com.br", "pt-BR", isNsfw = true, pkgName = "gekkouscan", overrideVersionCode = 10),
-            SourceData.Single("White Cloud Pavilion", "https://whitecloudpavilion.com/manga/patreon", "en"),
+            SourceData.Single("Gekkou Scans", "https://gekkou.com.br", "pt-BR", isNsfw = true, pkgName = "gekkouscan", overrideVersionCode = 12),
+            SourceData.Single("Gekkou Hentai", "https://hentai.gekkouscans.com.br", "pt-BR", isNsfw = true),
             // NOTE: THIS SOURCE CONTAINS A CUSTOM LANGUAGE SYSTEM (which will be ignored)!
             SourceData.Single("HentaiShark", "https://www.hentaishark.com", "all", isNsfw = true),
             // MultiLang("HentaiShark", "https://www.hentaishark.com", listOf("en", "ja", "zh", "de", "nl", "ko", "cz", "eo", "mn", "ar", "sk", "la", "ua", "ceb", "tl", "fi", "bg", "tr"), isNsfw = true, className = "HentaiSharkFactory"),
@@ -89,7 +88,6 @@ class MMRCMSSources {
 // SourceData("pl", "Dracaena", "https://dracaena.webd.pl/czytnik"),
 // SourceData("pt-BR", "Comic Space", "https://www.comicspace.com.br"), //ID "Comic Space" -> 1847392744200215680
 // SourceData("pl", "ToraScans", "http://torascans.pl"),
-// SourceData("en", "White Cloud Pavilion", "https://www.whitecloudpavilion.com/manga/free"),
 // SourceData("en", "Biamam Scans", "https://biamam.com"),
 // SourceData("en", "Mangawww Reader", "https://mangawww.club"),
 // SourceData("ru", "Anigai clan", "http://anigai.ru"),
@@ -133,7 +131,6 @@ class MMRCMSSources {
 // SourceData("it", "Kingdom Italia Reader", "http://kireader.altervista.org"),
 // SourceData("ja", "IchigoBook", "http://ichigobook.com"),
 // SourceData("ja", "Mangaraw Online", "http://mangaraw.online"
-// SourceData("ja", "Mangazuki RAWS", "https://raws.mangazuki.co"),
 // SourceData("ja", "MangaRAW", "https://www.mgraw.com"),
 // SourceData("ja", "マンガ/漫画 マガジン/雑誌 raw", "http://netabare-manga-raw.com"),
 // SourceData("ru", "NAKAMA", "http://nakama.ru"),

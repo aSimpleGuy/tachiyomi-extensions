@@ -3,14 +3,10 @@ apply plugin: 'kotlin-android'
 apply plugin: 'kotlinx-serialization'
 
 ext {
-    extName = 'Dmzj'
+    extName = 'DMZJ'
     pkgNameSuffix = 'zh.dmzj'
     extClass = '.Dmzj'
-    extVersionCode = 28
-}
-
-dependencies {
-    implementation project(':lib-ratelimit')
+    extVersionCode = 35
 }
 
 apply from: "$rootDir/common.gradle"

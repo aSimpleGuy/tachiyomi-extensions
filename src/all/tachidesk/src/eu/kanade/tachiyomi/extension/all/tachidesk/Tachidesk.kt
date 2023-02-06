@@ -10,6 +10,7 @@ import androidx.preference.PreferenceScreen
 import eu.kanade.tachiyomi.network.GET
 import eu.kanade.tachiyomi.network.asObservableSuccess
 import eu.kanade.tachiyomi.source.ConfigurableSource
+import eu.kanade.tachiyomi.source.UnmeteredSource
 import eu.kanade.tachiyomi.source.model.Filter
 import eu.kanade.tachiyomi.source.model.FilterList
 import eu.kanade.tachiyomi.source.model.MangasPage
@@ -20,7 +21,9 @@ import eu.kanade.tachiyomi.source.online.HttpSource
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import okhttp3.Credentials
+import okhttp3.Dns
 import okhttp3.Headers
+import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
 import rx.Observable
@@ -31,16 +34,22 @@ import uy.kohesive.injekt.Injekt
 import uy.kohesive.injekt.api.get
 import uy.kohesive.injekt.injectLazy
 
-class Tachidesk : ConfigurableSource, HttpSource() {
-    override val name = "Tachidesk"
+class Tachidesk : ConfigurableSource, UnmeteredSource, HttpSource() {
+    override val name = "Suwayomi"
+    override val id = 3100117499901280806L
     override val baseUrl by lazy { getPrefBaseUrl() }
     private val baseLogin by lazy { getPrefBaseLogin() }
     private val basePassword by lazy { getPrefBasePassword() }
 
-    override val lang = "en"
+    override val lang = "all"
     override val supportsLatest = false
 
     private val json: Json by injectLazy()
+
+    override val client: OkHttpClient =
+        network.client.newBuilder()
+            .dns(Dns.SYSTEM) // don't use DNS over HTTPS as it breaks IP addressing
+            .build()
 
     override fun headersBuilder(): Headers.Builder = Headers.Builder().apply {
         if (basePassword.isNotEmpty() && baseLogin.isNotEmpty()) {
